@@ -89,6 +89,8 @@ fn extracted(path: &str) -> bool {
         || lower.ends_with(".sprx")
         || lower == DLC_INI
         || lower == "playgo_stub.dat"
+        // ponytail: Forza Horizon 5 dereferences null if UserConfigOptionsPS5.xml in GameTunableSettings.zip is unresolvable; keep loose
+        || lower == "media/gametunablesettings.zip"
 }
 
 fn open(pkg: &Path) -> Result<(Io, Pkg)> {
@@ -1189,6 +1191,18 @@ fn build_inner(src: &Source, s: &Settings, before: &HashSet<PathBuf>) -> Result<
                 unpackable.1,
                 src.path.display()
             );
+        }
+        // ponytail: games whose save routine reads save_data.png crash if absent; copy icon0.png if missing.
+        let save_png = dir.join("sce_sys/save_data.png");
+        let icon_png = dir.join("sce_sys/icon0.png");
+        if !save_png.is_file() && icon_png.is_file() {
+            if let Ok(sz) = fs::copy(&icon_png, &save_png) {
+                files.entry("sce_sys/save_data.png".into()).or_insert_with(|| IndexFile {
+                    path: "sce_sys/save_data.png".into(),
+                    size: sz,
+                    chunks: None,
+                });
+            }
         }
     }
     compose_fakelib(src, s, pkg.as_ref().map(|(io, p)| (io, p)))?;
