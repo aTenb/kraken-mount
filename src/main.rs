@@ -763,7 +763,7 @@ fn main() {
         toast(&s, &i18n::port_busy(i18n::lang(), web::PORT));
         return;
     };
-    toast(&s, i18n::started(i18n::lang()));
+    toast(&s, &format!("{} v{}", i18n::started(i18n::lang()), env!("CARGO_PKG_VERSION")));
     install_bundled_ampr();
     prepare_ampr();
     std::thread::spawn(save_self_copy);
