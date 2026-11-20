@@ -306,7 +306,9 @@ fn route(state: &State, head: &str, body: &[u8], loopback: bool) -> Reply {
                     sys::notify(crate::i18n::stopped(crate::i18n::lang()));
                 }
                 std::thread::sleep(Duration::from_millis(200));
-                std::process::exit(0)
+                // ponytail: std::process::exit calls exit(3) which in PS5 libc only exits the calling
+                // thread when spawned from a pthread; _exit(2) invokes sys_exit to terminate the process.
+                unsafe { libc::_exit(0) };
             });
             no_content()
         }

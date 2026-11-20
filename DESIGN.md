@@ -103,9 +103,8 @@ Invalid values are logged and replaced by the default. The web UI edits the same
   needs it, logged `<TID>: fakelib: upgraded <name> (<project> <version>)`; any other copy (custom, the bundled
   release, a log build) is kept, so the game's or backport's own copy wins and nothing is downgraded: the dlc_emu set
   (its 3 files, each only if missing) when `dlc_emu.ini` (exact name, as dlc_emu opens it) is at the folder game's root, the backport's root or
-  the pkg's root; `libScePlayGo.sprx` when `eboot.bin` (the backport's if it has one, else the game's; pkg:
-  the extracted copy) contains the string `libScePlayGo` (an import; an encrypted eboot or an import only in
-  another prx is missed). Each add logs `<TID>: fakelib: added <name> (<project> <version>)`.
+  the pkg's root, or when `eboot.bin` or a PRX module imports `libSceNpEntitlementAccess` or `libSceAppContent`; `libScePlayGo.sprx` when `eboot.bin` (the backport's if it has one, else the game's; pkg:
+  the extracted copy) or a PRX module contains the string `libScePlayGo` (an import; an encrypted eboot or module is missed). Each add logs `<TID>: fakelib: added <name> (<project> <version>)`.
   The dlc_emu set is all-or-nothing: when any of its 3 files is a copy that is neither a known older release nor the bundled file, none of the 3
   is added or upgraded (no mixed set), logged `<TID>: fakelib: kept the game's dlc_emu files (not a known release)`; pgo_stub goes per file.
   Then, with `inject_ampr` and always for a pkg game (the package's own `libSceAmpr.sprx` cannot read the
@@ -114,10 +113,9 @@ Invalid values are logged and replaced by the default. The web UI edits the same
   ours (the `ampr-emu-ng X.Y.Z` identity in both files; ours without one counts as older), which is kept and logged
   `<TID>: fakelib: kept the game's ampr-emu-ng <v> (newer than <v>)` (no ng downgrade, also over a hand-placed copy). `.ampr` records what fakelib was composed from: `{"ampr": {name: [size, mtime]} or null,
   "emus": null without `add_emulators`, else the dlc_emu and pgo_stub versions, whether a `dlc_emu.ini` is on
-  disk (folder or backport root) and the eboot's [size, mtime], "playgo": [eboot size, mtime secs, imports PlayGo]}`
-  (a pkg's own `dlc_emu.ini` is not in it, a pkg change rebuilds through the stamp). "playgo" memoizes the PlayGo
-  import search: `eboot.bin` is read again only when its (size, mtime) differs (a read error is not memoized), and
-  `check` never compares it. An older `.ampr` without `emus` differs, so every cache refreshes `fakelib/` once; that
+  disk (folder or backport root) and the eboot's [size, mtime], "playgo": [eboot size, mtime secs, imports PlayGo], "dlc": [eboot size, mtime secs, imports DLC]}`
+  (a pkg's own `dlc_emu.ini` is not in it, a pkg change rebuilds through the stamp). "playgo" and "dlc" memoize the import searches: `eboot.bin` is read again only when its (size, mtime) differs (a read error is not memoized), and
+  `check` never compares it. An older `.ampr` without `emus` or with an older layout differs, so every cache refreshes `fakelib/` once; that
   one-time refresh also drops a `libSceSaveData.native.sprx` an older build copied (no separate check for such files).
   When "ampr" or "emus" differ (the ampr dir, `inject_ampr` or the emulator inputs changed) or `.done` still has a
   `game_fakelib` other than `full` (a cache built before the setting was removed), `check` says `Fakelib` and only `fakelib/` is

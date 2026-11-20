@@ -41,8 +41,11 @@ const EMUS: [(&str, &[u8], &str, bool); 4] = [
 ];
 /// dlc_emu's config at the game root: its presence asks for the DLC set.
 const DLC_INI: &str = "dlc_emu.ini";
-/// An import of libScePlayGo in a decrypted eboot.bin: its module name as a plain string.
+/// An import of libScePlayGo in a decrypted eboot.bin or PRX: its module name as a plain string.
 const PLAYGO_NEEDLE: &[u8] = b"libScePlayGo";
+/// An import of libSceNpEntitlementAccess or libSceAppContent in a decrypted eboot.bin or PRX.
+const ENTITLEMENT_NEEDLE: &[u8] = b"libSceNpEntitlementAccess";
+const APPCONTENT_NEEDLE: &[u8] = b"libSceAppContent";
 /// pkg caches: the mount point for the pkg's folder at /app0/kraken (launch.rs).
 pub const PKG_MOUNT_DIR: &str = "kraken";
 /// pkg caches: one line, no newline, the .pkg relative to /app0 (`kraken/<file name>`); ng opens /app0/ + it.
@@ -670,6 +673,7 @@ fn emu_state(src: &Source, s: &Settings) -> serde_json::Value {
     }
     let eboot = fs::metadata(eboot(src)).ok().map(|m| (m.len(), m.modified().map(secs).unwrap_or(0)));
     serde_json::json!({
+        "v": 2,
         "dlc_emu": DLC_EMU_VERSION.trim(),
         "pgo_stub": PGO_STUB_VERSION.trim(),
         "dlc_ini": dlc_ini_on_disk(src),
@@ -706,21 +710,67 @@ fn contains(r: &mut impl std::io::Read, needle: &[u8], chunk: usize) -> Result<b
     }
 }
 
-/// Whether the game imports libScePlayGo. ponytail: only eboot.bin is searched, a PlayGo import in
-/// another prx module is missed; an encrypted eboot never matches (no stub, the safe side).
-/// A missing eboot: false. A read error: logged with the title id and path, None (taken as false,
-/// not memoized).
+/// Discovers extracted and loose PRX/SPRX files for import scans (PlayGo, DLC).
+fn game_prx_files(src: &Source) -> Vec<PathBuf> {
+    let mut prxs = Vec::new();
+    let cache_dir = dir(&src.title_id);
+    for d in [&cache_dir, &cache_dir.join("sce_module")] {
+        if let Ok(rd) = fs::read_dir(d) {
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_file() && p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("prx") || ext.eq_ignore_ascii_case("sprx")) {
+                    prxs.push(p);
+                }
+            }
+        }
+    }
+    if let Kind::Folder(_) = src.kind {
+        for d in [&src.path, &src.path.join("sce_module")] {
+            if let Ok(rd) = fs::read_dir(d) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    if p.is_file() && p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("prx") || ext.eq_ignore_ascii_case("sprx")) {
+                        prxs.push(p);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(bp) = &src.backport {
+        for d in [bp, &bp.join("sce_module")] {
+            if let Ok(rd) = fs::read_dir(d) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    if p.is_file() && p.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("prx") || ext.eq_ignore_ascii_case("sprx")) {
+                        prxs.push(p);
+                    }
+                }
+            }
+        }
+    }
+    prxs
+}
+
+/// Whether the game imports libScePlayGo. Searches eboot.bin, then PRX modules.
+/// An encrypted eboot never matches (no stub, the safe side).
 fn wants_playgo(src: &Source) -> Option<bool> {
     let path = eboot(src);
     let found = File::open(&path).and_then(|mut f| contains(&mut f, PLAYGO_NEEDLE, CHUNK));
     match found {
-        Ok(b) => Some(b),
-        Err(e) if e.kind() == ErrorKind::NotFound => Some(false),
+        Ok(true) => return Some(true),
+        Ok(false) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
         Err(e) => {
             log!("{}: {}: PlayGo check: {e}", src.title_id, path.display());
-            None
+            return None;
         }
     }
+    for prx in game_prx_files(src) {
+        if File::open(&prx).and_then(|mut f| contains(&mut f, PLAYGO_NEEDLE, CHUNK)).unwrap_or(false) {
+            return Some(true);
+        }
+    }
+    Some(false)
 }
 
 /// wants_playgo, memoized in AMPR_STATE's "playgo" as [len, mtime secs, result] of the eboot:
@@ -740,6 +790,55 @@ fn wants_playgo_memo(src: &Source, had: &serde_json::Value, state: &mut serde_js
     let b = wants_playgo(src);
     if let Some(b) = b {
         state["playgo"] = serde_json::json!([len, mtime, b]);
+    }
+    b.unwrap_or(false)
+}
+
+/// Whether the game imports libSceNpEntitlementAccess or libSceAppContent in eboot.bin or PRX modules.
+fn wants_dlc(src: &Source) -> Option<bool> {
+    let path = eboot(src);
+    if let Ok(mut f) = File::open(&path) {
+        if contains(&mut f, ENTITLEMENT_NEEDLE, CHUNK).unwrap_or(false)
+            || contains(&mut f, APPCONTENT_NEEDLE, CHUNK).unwrap_or(false)
+        {
+            return Some(true);
+        }
+    }
+    for prx in game_prx_files(src) {
+        if let Ok(mut f) = File::open(&prx) {
+            if contains(&mut f, ENTITLEMENT_NEEDLE, CHUNK).unwrap_or(false)
+                || contains(&mut f, APPCONTENT_NEEDLE, CHUNK).unwrap_or(false)
+            {
+                return Some(true);
+            }
+        }
+    }
+    Some(false)
+}
+
+/// wants_dlc, memoized in AMPR_STATE's "dlc" as [len, mtime secs, result] of the eboot.
+fn wants_dlc_memo(
+    src: &Source,
+    had: &serde_json::Value,
+    state: &mut serde_json::Value,
+    pkg: Option<(&Io, &Pkg)>,
+) -> bool {
+    if dlc_ini_on_disk(src) || pkg.is_some_and(|(_, p)| p.files().any(|e| !e.is_dir && e.path == DLC_INI)) {
+        return true;
+    }
+    let Some((len, mtime)) = fs::metadata(eboot(src)).ok().map(|m| (m.len(), m.modified().map(secs).unwrap_or(0))) else {
+        return wants_dlc(src).unwrap_or(false);
+    };
+    let old = &had["dlc"];
+    if old[0].as_u64() == Some(len) && old[1].as_u64() == Some(mtime) {
+        if let Some(b) = old[2].as_bool() {
+            state["dlc"] = old.clone();
+            return b;
+        }
+    }
+    let b = wants_dlc(src);
+    if let Some(b) = b {
+        state["dlc"] = serde_json::json!([len, mtime, b]);
     }
     b.unwrap_or(false)
 }
@@ -917,9 +1016,11 @@ fn compose_fakelib(src: &Source, s: &Settings, pkg: Option<(&Io, &Pkg)>) -> Resu
     if had.get("playgo").is_some() {
         state["playgo"] = had["playgo"].clone();
     }
+    if had.get("dlc").is_some() {
+        state["dlc"] = had["dlc"].clone();
+    }
     if s.add_emulators {
-        let dlc = dlc_ini_on_disk(src)
-            || pkg.is_some_and(|(_, p)| p.files().any(|e| !e.is_dir && e.path == DLC_INI));
+        let dlc = wants_dlc_memo(src, &had, &mut state, pkg);
         add_emus(&src.title_id, &fakelib, dlc, || wants_playgo_memo(src, &had, &mut state))?;
     }
     if injects_ampr(src, s) {
