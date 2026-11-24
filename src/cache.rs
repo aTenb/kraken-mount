@@ -90,6 +90,8 @@ fn extracted(path: &str) -> bool {
         || (lower.ends_with(".elf") && !lower.starts_with("decrypted/"))
         || lower == DLC_INI
         || lower == "playgo_stub.dat"
+        // ponytail: Forza Horizon 5 dereferences null if UserConfigOptionsPS5.xml in GameTunableSettings.zip is unresolvable; keep loose
+        || lower == "media/gametunablesettings.zip"
 }
 
 fn open(pkg: &Path) -> Result<(Io, Pkg)> {
