@@ -348,11 +348,19 @@ fn mark_version(mark: &str, len: usize, crc: u32) -> Option<Option<&str>> {
 }
 
 /// `vX.Y.Z` (leading v optional); None = unknown.
-pub(crate) fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
+pub(crate) const VERSION: &str = include_str!("../VERSION").trim_ascii();
+
+/// "X.Y.Z" or "X.Y.Z.W", leading "v" allowed (used for ampr-emu-ng and self-update).
+pub(crate) fn parse_version(v: &str) -> Option<(u32, u32, u32, u32)> {
     let v = v.trim();
     let mut it = v.strip_prefix('v').unwrap_or(v).split('.').map(|p| p.parse::<u32>().ok());
-    let r = (it.next()??, it.next()??, it.next()??);
-    it.next().is_none().then_some(r)
+    let (a, b, c) = (it.next()??, it.next()??, it.next()??);
+    let d = match it.next() {
+        None => 0,
+        Some(Some(d)) if it.next().is_none() => d,
+        _ => return None,
+    };
+    Some((a, b, c, d))
 }
 
 /// `a` newer than `b`; an unknown version is older than any.
