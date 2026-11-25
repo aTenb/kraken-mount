@@ -318,7 +318,7 @@ fn cached(ctype: &'static str, body: impl Into<Vec<u8>>) -> Reply {
 /// Its comment changes with the version and the page, so a new build's page is fetched again.
 fn appcache() -> String {
     let hash = UI.bytes().fold(0xcbf29ce484222325u64, |h, b| (h ^ b as u64).wrapping_mul(0x100000001b3));
-    format!("CACHE MANIFEST\n# {} {hash:016x}\nCACHE:\n/\n/app-icon.png\nNETWORK:\n*\n", env!("CARGO_PKG_VERSION"))
+    format!("CACHE MANIFEST\n# {} {hash:016x}\nCACHE:\n/\n/app-icon.png\nNETWORK:\n*\n", crate::VERSION)
 }
 
 fn no_content() -> Reply {
@@ -489,7 +489,7 @@ fn route(state: &State, head: &str, body: &[u8], loopback: bool) -> Reply {
     let target = parts.next().unwrap_or("");
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     match (method, path) {
-        ("GET", "/") => cached("text/html; charset=utf-8", UI.replace("__VERSION__", env!("CARGO_PKG_VERSION"))),
+        ("GET", "/") => cached("text/html; charset=utf-8", UI.replace("__VERSION__", crate::VERSION)),
         ("GET", "/kraken.appcache") => cached("text/cache-manifest", appcache()),
         ("GET", "/app-icon.png") => cached("image/png", APP_ICON),
         ("GET", "/api/state") => reply(200, "application/json", api_state(state)),
@@ -791,7 +791,7 @@ fn report_text(g: &Game, s: &Settings, ampr: &serde_json::Value, crash: Option<&
     let mut out = format!(
         "Kraken Mount {}\nFirmware: (please fill in)\nGame: {} ({}), version {}\nSource: {} ({kind}, {})\n\
          Status: {}{}\nampr-emu-ng: {ampr}\nPlayGo stub: {playgo}\nLast crash: {crash}\n",
-        env!("CARGO_PKG_VERSION"), src.title_name, src.title_id, src.version, src.path.display(), src.drive,
+        crate::VERSION, src.title_name, src.title_id, src.version, src.path.display(), src.drive,
         g.status, g.error.as_deref().map_or(String::new(), |e| format!(" ({e})")),
     );
     let lines: Vec<&str> = log.lines().filter(|l| l.contains(src.title_id.as_str())).collect();
@@ -846,7 +846,7 @@ fn api_state(state: &State) -> Vec<u8> {
     let mut running: Vec<String> = state.running.lock().unwrap().iter().cloned().collect();
     running.sort();
     let v = serde_json::json!({
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": crate::VERSION,
         "update": crate::update::available(),
         "busy": state.busy.load(Ordering::SeqCst),
         "paused": !running.is_empty(),
@@ -1542,7 +1542,7 @@ fn v1(state: &State, route: &str, body: &[u8]) -> Reply {
     let r = v1_body(body).and_then(|b| match route {
         "version" => Ok(json!({
             "api_version": 1,
-            "kraken_mount_version": env!("CARGO_PKG_VERSION"),
+            "kraken_mount_version": crate::VERSION,
             "capabilities": ["list_games", "add_manual_source", "remove_manual_source", "uninstall_game", "rescan", "fakelib"],
         })),
         "games" => Ok(v1_games(state)),

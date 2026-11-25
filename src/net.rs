@@ -126,7 +126,7 @@ pub fn https_get(url: &str, max: usize) -> io::Result<Vec<u8>> {
         // Blocking HTTP/1.1 avoids libhttp2's internal event-thread affinity (SMP).
         let http = handle("sceHttpInit", url, sceHttpInit(pool, ssl, HTTP_POOL_SIZE))?;
         let _http = Guard(http, sceHttpTerm);
-        let agent = concat!("kraken-mount/", env!("CARGO_PKG_VERSION"), "\0");
+        let agent = format!("kraken-mount/{}\0", crate::VERSION);
         let tmpl = sceHttpCreateTemplate(http, agent.as_ptr().cast(), HTTP_VERSION_1_1, 1);
         let tmpl = handle("sceHttpCreateTemplate", url, tmpl)?;
         let _tmpl = Guard(tmpl, sceHttpDeleteTemplate);

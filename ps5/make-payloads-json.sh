@@ -28,7 +28,11 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 elf=$1
 out=${2:-payloads.json}
 
-version=$(tr -d '\r' < "$root/Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n1)
+if [[ -f "$root/VERSION" ]]; then
+  version=$(tr -d '\r\n' < "$root/VERSION")
+else
+  version=$(tr -d '\r' < "$root/Cargo.toml" | sed -n 's/^version = "\(.*\)"$/\1/p' | head -n1)
+fi
 [[ -n $version ]] || { echo "make-payloads-json.sh: no version in Cargo.toml" >&2; exit 1; }
 [[ $version =~ ^[0-9A-Za-z.+-]+$ ]] ||
   { echo "make-payloads-json.sh: odd version '$version'" >&2; exit 1; }

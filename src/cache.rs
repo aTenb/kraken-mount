@@ -92,6 +92,7 @@ fn extracted(path: &str) -> bool {
         || (lower.ends_with(".elf") && !lower.starts_with("decrypted/"))
         || lower == DLC_INI
         || lower == "playgo_stub.dat"
+        || lower == "media/gametunablesettings.zip"
 }
 
 fn open(pkg: &Path) -> Result<(Io, Pkg)> {
