@@ -135,6 +135,14 @@ pub fn mount_of(path: &Path) -> Option<PathBuf> {
     Some(Path::new(MOUNT_BASE).join(name))
 }
 
+/// Whether the game folder `dir` (a cache's stamp source) is in `image`'s mount, or for a `.ffpfsc`
+/// in its inner image's mount. Paths only: true after the mounts are released too.
+pub fn holds(image: &Path, dir: &Path) -> bool {
+    let mp = mount_point(image);
+    let inner = probe(image).ok().and_then(|p| p.inner).map(|name| mount_point(&mp.join(name)));
+    mount_of(dir).is_some_and(|m| m == mp || inner.as_ref() == Some(&m))
+}
+
 /// An image file inside a mounted `.ffpfsc` container: SMP's nested inner profile.
 fn nested_inner(image: &Path) -> bool {
     mount_of(image).is_some_and(|mp| mp.file_name().is_some_and(|n| n.to_string_lossy().starts_with(PFSC_PREFIX)))
@@ -382,12 +390,17 @@ fn mount(image: &Path, fs: Fs, size: u64, mp: &Path) -> io::Result<()> {
 }
 
 /// Unmounts `mp` (never MNT_FORCE: EBUSY = a title, a running game or an inner image still uses
-/// it), detaches its LVD unit and forgets it.
+/// it), detaches its LVD unit and forgets it. The unit is the live mount's /dev/lvdN, or the recorded
+/// one for a dead mount (still in the table, so attached this boot). Nothing mounted at `mp`: the
+/// record may be from before a reboot, its unit now another image's or the system's: not detached.
+/// ponytail: a unit whose mount went without its detach (a failed detach, the payload killed in
+/// between, an unmount from elsewhere) stays attached until reboot: its number alone cannot tell.
 pub fn release(mp: &Path) -> io::Result<()> {
     let unit = match mounted_at(mp) {
         Ok(Some((_, from))) => from.strip_prefix("/dev/lvd").and_then(|u| u.parse().ok()),
-        _ => None,
-    }.or_else(|| recorded(mp).map(|(u, _)| u));
+        Ok(None) => None,
+        Err(_) => recorded(mp).map(|(u, _)| u),
+    };
     let fspath = mp.to_string_lossy();
     match crate::sys::unmount(&fspath, 0) {
         Ok(()) => {}
@@ -396,8 +409,7 @@ pub fn release(mp: &Path) -> io::Result<()> {
         Err(e) => return Err(Error::new(e.kind(), format!("unmount {fspath}: {e}"))),
     }
     if let Some(unit) = unit {
-        // ENXIO/ENOENT/EINVAL: the unit is already gone. ponytail: the unit number is not checked
-        // against the node identity as SMP does; a unit reused by the system in between is detached.
+        // ENXIO/ENOENT/EINVAL: the unit is already gone.
         if let Err(e) = detach(unit) {
             if !matches!(e.raw_os_error(), Some(libc::ENXIO | libc::ENOENT | libc::EINVAL)) {
                 log!("{fspath}: detach /dev/lvd{unit}: {e}");
@@ -443,8 +455,10 @@ pub fn release_tree(mp: &Path, table: &[(String, String, u64)]) -> io::Result<()
 }
 
 /// After a scan: releases every image mount not in `keep` (its image is gone, moved, or no longer
-/// a source), with what is on top of it. A failure (busy) is logged and retried next pass.
-pub fn release_unused(keep: &HashSet<PathBuf>) {
+/// a source), with what is on top of it. A failure (busy) is logged and retried next pass. A mount
+/// under a `running` title's /system_ex/app stack (or holding such an inner image) is left alone:
+/// a running homebrew's title is never touched.
+pub fn release_unused(keep: &HashSet<PathBuf>, running: &[String]) {
     let all = mounts();
     // A kept inner image keeps its container (a game folder with a scan error names only the inner).
     let mut keep = keep.clone();
@@ -456,7 +470,7 @@ pub fn release_unused(keep: &HashSet<PathBuf>) {
         }
         keep.extend(parents);
     }
-    let unused: Vec<PathBuf> = all.into_iter().map(|(mp, _)| mp).filter(|mp| !keep.contains(mp)).collect();
+    let unused: Vec<PathBuf> = all.iter().map(|(mp, _)| mp.clone()).filter(|mp| !keep.contains(mp)).collect();
     if unused.is_empty() {
         return;
     }
@@ -467,9 +481,20 @@ pub fn release_unused(keep: &HashSet<PathBuf>) {
             return;
         }
     };
+    let runs_on = |mp: &Path| {
+        let prefix = format!("{}/", mp.display());
+        table.iter().any(|(on, from, _)| {
+            let from = from.strip_prefix("<above>:").unwrap_or(from);
+            on.strip_prefix("/system_ex/app/").is_some_and(|t| running.iter().any(|r| r == t))
+                && (from == mp.to_string_lossy() || from.starts_with(&prefix))
+        })
+    };
     for mp in unused {
         // Already gone as the inner image of a container released before it.
         if !state_file(&mp).exists() {
+            continue;
+        }
+        if runs_on(&mp) || all.iter().any(|(child, image)| image.starts_with(&mp) && runs_on(child)) {
             continue;
         }
         if let Err(e) = release_tree(&mp, &table) {

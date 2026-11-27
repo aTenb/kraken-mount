@@ -67,23 +67,30 @@ only into a cache's `fakelib/`, never into `/data/krakenmount/ampr/`.
   and mounted again.
 - Scan: an image still being written (stability) is neither probed nor attached; its title id is that of a
   cache whose stamp source is in its mount point.
-- Release (`image::release_unused`, every pass after the scan, before the games are processed): every
+- Release (`image::release_unused`, every pass after the scan, before the games are processed; a mount under a
+  running title's `/system_ex/app/<TID>` stack, or holding such an inner image, stays: a running homebrew's title
+  is never touched): every
   mount of ours not used by a game (its image mount and the mount of its folder), duplicate, unstable image
   or scan error of this pass, nor holding such a mount, is released by `image::release_tree`: the images
   mounted from inside it first, then the `/system_ex/app/<TID>` stacks on it (`register::unmount_title`,
   never MNT_FORCE), then unmount (never MNT_FORCE), LVD detach (`0xC0286D01`), state file and dir removed.
+  The unit detached is the live mount's `/dev/lvdN`, or the recorded one for a dead mount (still in the mount
+  table, so attached this boot). Nothing mounted there: the record may predate a reboot (its unit now another
+  image's or the system's), so it is dropped without a detach.
   Busy = logged, retried next pass. So a moved image's cache sees its old folder gone and relinks (`Fresh::Moved`).
 - Eject: the image mounts whose image is on the drive are released (`release_tree`) before the IPMI eject.
 - `/app0` of an image game is read-only (writes fail with EROFS), as in SMP's default `read_only`.
   `fix_access` skips the image tree (chmod cannot succeed there). Web: `"image"` in a game's JSON, the
-  badge is the image's extension (`EXFAT`, `FFPKG`, `FFPFS`, `FFPFSC`); the library's filter chips count an
-  image game by its packing (plain, zstd, LZ4) like any folder. The Images screen lists every image file of
-  the last scan (`images` in `/api/state`): its game, format, path and state (mounted, duplicate, being
-  copied, error with the message), and Details opens the game sheet. The game size in `/api/sizes` is the
-  image size.
+  badge is the image's extension (`EXFAT`, `FFPKG`, `FFPFS`, `FFPFSC`), its pills start on the card's second
+  row. The library's Images chip (before Duplicates) lists the image games (every chip but All shows only
+  while it has games); the other kind chips leave them out. The game sheet's Path, Hide and Delete name the image file.
+  A gameless or unreadable image is a scan error (log only). The game size in `/api/sizes` is the image size.
+- Hide, `games/uninstall` and `/api/delete` go by `Source::origin` (the image file, not its mount folder):
+  `exclude` gets the image path; Delete releases its mounts (`release_tree`, busy = 500, the file stays),
+  then deletes the file.
 - ponytail: no MD backend, no per-image sector override, no PFS GDDR5 metadata-cache ioctl (SMP's
-  `nested_pfs_index_cache`, off by default there too), one game per `.ffpfsc`, the detached unit is not
-  checked against the node identity (SMP does), and an image replaced in place while mounted keeps serving
+  `nested_pfs_index_cache`, off by default there too), one game per `.ffpfsc`, a unit whose detach failed is
+  not retried once its mount is gone, and an image replaced in place while mounted keeps serving
   the old file until it is released (unplug, move, or a payload restart after a reboot).
 
 ## Paths
@@ -807,14 +814,13 @@ answers, and two copies would scan at once. The install fails and its marker mea
   image: the `.exfat`/`.ffpkg`/`.ffpfs`/`.ffpfsc` file of an image game|null,
   retail: bool (only on the installed row of a retail install; 8 bytes of its app.pkg read per poll, ponytail)}],
 
-  images:[{path, size, state:"game"|"copying"|"error", title_id|null, error|null}] (every image file of the last scan, by path: a game or duplicate, one still being written, or a scan error),
   drives:[{mount, label, kind, total, free, ejectable}], cache:{path, size, free, low_space, ampr_present}, log:[last 100 lines of the last 64 KiB]}`
 - `GET /api/report/<TID>` -> plain text for an issue: Kraken Mount version, a firmware line to fill in,
   the game (name, title id, version, source, kind, drive, status and error; the image file of an image game), ampr-emu-ng (`/api/ampr`
   kind and version), the PlayGo stub (on, off, or not added), the last crash, and the last 40 lines of
   the log tail (64 KiB) that contain the title id; 404 for an invalid or absent library title.
   The game sheet's Report button opens it.
-- `GET /api/hidden` -> `[{path, title_id, title_name, version, kind, packing, drive, size}]`, one per `exclude` entry, read by `scan::read_source` on request (the UI asks when the Hidden tab opens and after hide/unhide, never per poll); all but `path` null when it is not a readable game.
+- `GET /api/hidden` -> `[{path, title_id, title_name, version, kind, packing, image, drive, size}]`, one per `exclude` entry, read by `scan::read_source` on request (the UI asks when the Hidden tab opens and after hide/unhide, never per poll); all but `path` null when it is not a readable game.
 - `GET /api/settings` -> settings JSON; `POST /api/settings` (JSON body, any subset of the keys) -> merged
   over the current `config.toml` (a missing key keeps the file's value, lists not sent stay verbatim; the UI
   sends only changed keys), save,
@@ -872,14 +878,14 @@ answers, and two copies would scan at once. The install fails and its marker mea
   queued or installing; cancel it first`, as `/api/install/delete-source`; ponytail: a job queued after the check
   fails at its start on the missing file); 500 on source or cache deletion failure. It validates the
   source is inside a scan root with no symlink from the root down (links above the root are not checked), is not under any `.../user/app/` (an installed copy's
-  files), and is a .pkg file or game directory, then unmounts `/system_ex/app/<TID>` without force and deletes the source. If that
+  files), and is a .pkg file, game directory or (image game) image file, then unmounts `/system_ex/app/<TID>` without force and deletes the source (an image: its mounts released first). If that
   fails, the cache and tile stay and the next pass remounts the title (a folder partly removed stays so).
   Then it uninstalls the home-screen entry (failure logged), removes the title from the launch set
   and its game row, wakes the scan loop, deletes the cache, and logs and optionally notifies.
   A body that is the path of a `duplicate` row of the title (`delete_duplicate`, after `lock_title`): only that source
   is deleted (the queued/installing check, `installed_refusal` and `safe_delete_source` as above), the row dropped,
   204; the library copy's registration, mount and cache stay (they belong to the title), no toast.
-- `POST /api/hide/<TID>`, body: the source path the UI showed (empty = any) -> `games/uninstall` below
+- `POST /api/hide/<TID>`, body: the game's `path` (an image game's mount folder; empty = any) -> `games/uninstall` below
   (`uninstall_keep`: off the home screen, source and its duplicates added to `exclude`), 204; also 409 when the
   body is not the current library source. A title never staged (no `/user/app/<TID>/sce_sys/param.json`, e.g.
   its first build failed) is only excluded: no uninstall. Errors as plain text with the same HTTP codes.
@@ -887,7 +893,9 @@ answers, and two copies would scan at once. The install fails and its marker mea
   (`change_settings`, scan woken), the row dropped, 204; the library copy stays registered. The Library's
   Duplicates chip (shown while the state lists a `duplicate`; All and the kind chips list them too) lists only these
   rows; their game sheets have Rebuild (per title, so the library copy's cache), Hide and Delete.
-- `POST /api/hidden/delete`, body: an `exclude` path that `scan::read_source` reads as a game -> its source deleted
+- `POST /api/hidden/delete`, body: an `exclude` path that `scan::read_source` reads as a game (an image file through
+  `image::probe`, not mounted) -> its source deleted (an image: `remove_image`, its mounts released first; its
+  registered source is a game folder in its mount, `image::holds`)
   (the guards of `/api/delete`: `State::work` try-lock, its title not running, not queued or installing,
   `safe_delete_source`), then the path leaves `exclude`, 204; 404 when not excluded, 409 for an unreadable path or a
   guard, 500 when the delete or the save fails. When the path is the title's registered source (`cache::stamp_source`) and the registration is ours (`register::is_ours`; a source hidden by hand stays registered), the title is unmounted first (409 when busy) and uninstalled + forgotten after the delete, as `/api/delete`; a failed delete mounts it again (without a backport layer; the scan does not remount an excluded source). The title's cache stays (Purge). The Hidden screen's Delete.
@@ -921,7 +929,7 @@ answers, and two copies would scan at once. The install fails and its marker mea
     "remove_manual_source", "uninstall_game", "rescan", "fakelib", "fakelib_unlisted", "reregister_missing", "game_info"]}`. A client
     checks a capability, not the version: `fakelib_unlisted` = `games/fakelib` takes a title not in the library yet;
     `reregister_missing` = a title uninstalled outside Kraken Mount registers again at the next pass, with no restart.
-  - `games` -> `{status, count, games: [{title_id, name, version, path, runtime_path (folder: path; pkg: ""),
+  - `games` -> `{status, count, games: [{title_id, name, version, path, runtime_path (folder: path; pkg: ""; an image game: `path` is the image file, `runtime_path` its mount folder),
     source_type: "folder"|"pkg"|"installed", managed: true (installed: false), installed (= registered), mounted, source_available (= source_present),
     status (the Kraken status), error ("" when none), fakelib_mode: "full"|"disabled" (overlay_off, folder and installed sources only)}]}`; library
     titles only (no `duplicate` rows); the three flags as in `/api/state`.

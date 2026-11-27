@@ -55,6 +55,14 @@ pub struct Source {
     pub image: Option<PathBuf>,
 }
 
+impl Source {
+    /// What lies in the scan root: an image game's image file, else `path`. `exclude` entries and
+    /// deletes go by it.
+    pub fn origin(&self) -> &Path {
+        self.image.as_deref().unwrap_or(&self.path)
+    }
+}
+
 pub struct ScanResult {
     pub games: Vec<Source>,
     pub duplicates: Vec<Source>,
@@ -702,6 +710,7 @@ fn packing(dir: &Path) -> Packing {
 /// it is not a readable game (a patch or DLC package included). For excluded paths, which the scan skips.
 pub fn read_source(path: &Path) -> Option<Source> {
     let m = fs::metadata(path).ok()?;
+    let image = m.is_file() && crate::image::is_image(path);
     let (kind, size, (title_id, title_name, version)) =
         if m.is_file() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pkg")) {
             let mtime = m.modified().ok()?;
@@ -713,12 +722,16 @@ pub fn read_source(path: &Path) -> Option<Source> {
         } else if m.is_dir() && path.join("eboot.bin").is_file() {
             // ponytail: param.json is read again on every call (a few KiB; the scan does it per pass too).
             (Kind::Folder(packing(path)), 0, parse_param(&read_param(path).ok()?).ok()?)
+        } else if image {
+            // Read without attaching it: `path` stays the image file (no mount folder here).
+            (Kind::Folder(Packing::Plain), m.len(), parse_param(&crate::image::probe(path).ok()?.param).ok()?)
         } else {
             return None;
         };
     Some(Source {
         path: path.to_path_buf(), kind, title_id, title_name, version, size,
-        drive: crate::storage::drive_of(path), backport: None, image: None,
+        drive: crate::storage::drive_of(path), backport: None,
+        image: image.then(|| path.to_path_buf()),
     })
 }
 

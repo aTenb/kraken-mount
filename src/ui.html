@@ -939,12 +939,9 @@ button.swatch[aria-checked="true"] { border-color: transparent; box-shadow: none
 .bprow .bpstate { flex: none; min-width: 11rem; text-align: center; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); font-size: 1rem; font-weight: 600; background: var(--surface-2); color: var(--muted); }
 .bprow .bpstate.on { background: var(--ok-bg); color: var(--ok); }
 .bprow button { flex: none; }
-#bplist:empty, #hdlist:empty, #imlist:empty { display: none; }
-.bprow .bpstate.err { background: var(--danger-bg); color: var(--danger); }
-.bprow .imerr { flex-basis: 100%; color: var(--danger); font-size: 1.1rem; overflow-wrap: anywhere; }
+#bplist:empty, #hdlist:empty { display: none; }
 .bprow .hdkind { flex: none; min-width: 3.5rem; text-align: center; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm); font: 600 1rem var(--font-mono); background: var(--surface-2); color: var(--ink-2); }
-#hdlist code, #imlist code { flex-basis: 12rem; }
-#imlist .bpstate { min-width: 9rem; }
+#hdlist code { flex-basis: 12rem; }
 /* Storage screen: one card per connected drive. */
 .dcard { padding: var(--space-4) var(--space-5); }
 .dhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2) var(--space-3); }
@@ -993,6 +990,8 @@ button.swatch[aria-checked="true"] { border-color: transparent; box-shadow: none
   border-radius: 50%; background: currentColor; vertical-align: 0.05rem;
 }
 .card .status-pill[hidden] + .running-pill { top: var(--space-2); }
+.card.img .status-pill, .card.img .status-pill[hidden] + .running-pill { top: 2.6rem; }
+.card.img .running-pill { top: 4.7rem; }
 /* Installed games: a second badge (Retail) under the source badge. */
 .badge.b2 { top: calc(var(--space-2) + 1.85rem); }
 .badge.inst { color: var(--label-ok); }
@@ -1145,10 +1144,6 @@ html.kbd .sheet button.primary:focus { background: var(--accent); border-color: 
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 4.5a2 2 0 0 1 4 0V6h4v4h-1.5a2 2 0 0 0 0 4H18v4h-4v-1.5a2 2 0 0 0-4 0V18H6v-4h1.5a2 2 0 0 0 0-4H6V6h4z"/></svg>
       <span class="rail-label" data-i18n="backportsTab">Backports</span>
     </button>
-    <button class="seg-opt rail-item" role="tab" id="tab-images" aria-selected="false" aria-controls="images" data-view="images" type="button">
-      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M12 3v3M12 18v3"/></svg>
-      <span class="rail-label" data-i18n="imagesTab">Images</span>
-    </button>
     <button class="seg-opt rail-item" role="tab" id="tab-drives" aria-selected="false" aria-controls="drives" data-view="drives" type="button">
       <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>
       <span class="rail-label" data-i18n="storage">Storage</span>
@@ -1276,15 +1271,6 @@ html.kbd .sheet button.primary:focus { background: var(--accent); border-color: 
     <div class="banner warn" id="bpoff" data-i18n="bpOff">Backports are off in Settings: none of these are applied.</div>
     <div class="group" id="bplist"></div>
     <p class="dstats" id="bpempty" hidden data-i18n="bpNone">No backports found.</p>
-  </div>
-</section>
-
-<section id="images" role="tabpanel" aria-labelledby="tab-images" hidden>
-  <div class="settings">
-    <div class="settings-top"><h2 data-i18n="imagesTab">Images</h2></div>
-    <p class="bphint" data-i18n="imHint" data-args="ext=.exfat, .ffpkg, .ffpfs, .ffpfsc" data-wrap="ext=code">Image files (.exfat, .ffpkg, .ffpfs, .ffpfsc) in the scan folders. Each is read before it is mounted; one holding a game is mounted read-only and the game shows up in the Library.</p>
-    <div class="group" id="imlist"></div>
-    <p class="dstats" id="imempty" hidden data-i18n="imNone">No image files found in the scan folders.</p>
   </div>
 </section>
 
@@ -1524,6 +1510,7 @@ var MSG = {
     deleteTitle: 'Delete {name}?',
     deletePkg: 'The .pkg file and its cache will be deleted from the drive: {path}. This cannot be undone.',
     deleteFolder: 'The game folder and its cache will be deleted from the drive: {path}. This cannot be undone.',
+    deleteImage: 'The image file and its cache will be deleted from the drive: {path}. This cannot be undone.', delDupImage: 'This image file will be deleted from the drive: {path}. The library copy and its cache stay. This cannot be undone.',
     stopTitle: 'Stop Kraken Mount?',
     stopText: 'Games stay registered. Open the Kraken Mount tile to start it again.',
     stopYes: 'Stop',
@@ -1578,7 +1565,7 @@ var MSG = {
     gNotify: 'Notifications & log', gMaint: 'Maintenance', expandMenu: 'Expand menu', collapseMenu: 'Collapse menu',
     hideTitle: 'Hide {name}?', hideText: 'It leaves the home screen and the library. Its files stay at {path}; Unhide it from the Hidden screen.',
     backportsTab: 'Backports', bpDeleteAll: 'Delete all', bpNone: 'No backports found.',
-    imagesTab: 'Images', imHint: 'Image files ({ext}) in the scan folders. Each is read before it is mounted; one holding a game is mounted read-only and the game shows up in the Library.', imNone: 'No image files found in the scan folders.', imMounted: 'Mounted', imCopying: 'Being copied', imDetails: 'Details',
+    kindImages: 'Images',
     bpHint: 'Folders in {dir} of a scan root replace the game\'s files at launch.',
     bpOff: 'Backports are off in Settings: none of these are applied.',
     bpApplied: 'Applied', bpPending: 'Applies on next build', bpOffState: 'Off',
@@ -1687,6 +1674,7 @@ var MSG = {
     deleteTitle: 'Удалить {name}?',
     deletePkg: 'Файл .pkg и его кеш будут удалены с накопителя: {path}. Это нельзя отменить.',
     deleteFolder: 'Папка игры и её кеш будут удалены с накопителя: {path}. Это нельзя отменить.',
+    deleteImage: 'Файл образа и его кеш будут удалены с накопителя: {path}. Это нельзя отменить.', delDupImage: 'Этот файл образа будет удалён с накопителя: {path}. Копия в библиотеке и её кеш останутся. Это нельзя отменить.',
     stopTitle: 'Остановить Kraken Mount?',
     stopText: 'Игры останутся зарегистрированными. Чтобы запустить его снова, откройте плитку Kraken Mount.',
     stopYes: 'Остановить',
@@ -1740,7 +1728,7 @@ var MSG = {
     gNotify: 'Уведомления и журнал', gMaint: 'Обслуживание', expandMenu: 'Развернуть меню', collapseMenu: 'Свернуть меню',
     hideTitle: 'Скрыть {name}?', hideText: 'Игра пропадёт с главного экрана и из библиотеки. Её файлы останутся в {path}; вернуть её можно в разделе «Скрытые».',
     backportsTab: 'Бэкпорты', bpDeleteAll: 'Удалить все', bpNone: 'Бэкпорты не найдены.',
-    imagesTab: 'Образы', imHint: 'Файлы образов ({ext}) в папках сканирования. Каждый сначала читается без монтирования; образ с игрой монтируется только для чтения, и игра появляется в библиотеке.', imNone: 'В папках сканирования нет файлов образов.', imMounted: 'Смонтирован', imCopying: 'Копируется', imDetails: 'Подробнее',
+    kindImages: 'Образы',
     bpHint: 'Папки {dir} в корне сканирования при запуске заменяют файлы игры.',
     bpOff: 'Бэкпорты выключены в настройках: ни один из них не применяется.',
     bpApplied: 'Применён', bpPending: 'Применится при следующей сборке', bpOffState: 'Выключен',
@@ -1849,6 +1837,7 @@ var MSG = {
     deleteTitle: '删除 {name}？',
     deletePkg: '将从驱动器删除 .pkg 文件及其缓存：{path}。此操作无法撤销。',
     deleteFolder: '将从驱动器删除游戏文件夹及其缓存：{path}。此操作无法撤销。',
+    deleteImage: '将从驱动器删除镜像文件及其缓存：{path}。此操作无法撤销。', delDupImage: '将从驱动器删除此镜像文件：{path}。游戏库中的副本及其缓存将保留。此操作无法撤销。',
     stopTitle: '停止 Kraken Mount？',
     stopText: '游戏将保持注册。打开 Kraken Mount 磁贴即可再次启动。',
     stopYes: '停止',
@@ -1902,7 +1891,7 @@ var MSG = {
     gNotify: '通知与日志', gMaint: '维护', expandMenu: '展开菜单', collapseMenu: '收起菜单',
     hideTitle: '隐藏 {name}？', hideText: '它将从主屏幕和游戏库中移除。其文件仍保留在 {path}；可在“已隐藏”页面取消隐藏。',
     backportsTab: '向下移植', bpDeleteAll: '全部删除', bpNone: '未找到向下移植。',
-    imagesTab: '镜像', imHint: '扫描文件夹中的镜像文件（{ext}）。每个镜像在挂载前都会先被读取；包含游戏的镜像以只读方式挂载，游戏会出现在游戏库中。', imNone: '扫描文件夹中未找到镜像文件。', imMounted: '已挂载', imCopying: '正在复制', imDetails: '详情',
+    kindImages: '镜像',
     bpHint: '扫描根目录中 {dir} 下的文件夹会在启动时替换游戏文件。',
     bpOff: '设置中已关闭向下移植：以下内容均不会应用。',
     bpApplied: '已应用', bpPending: '下次构建时应用', bpOffState: '已关闭',
@@ -2011,6 +2000,7 @@ var MSG = {
     deleteTitle: '{name} löschen?',
     deletePkg: 'Die .pkg-Datei und ihr Cache werden vom Laufwerk gelöscht: {path}. Das lässt sich nicht rückgängig machen.',
     deleteFolder: 'Der Spielordner und sein Cache werden vom Laufwerk gelöscht: {path}. Das lässt sich nicht rückgängig machen.',
+    deleteImage: 'Die Image-Datei und ihr Cache werden vom Laufwerk gelöscht: {path}. Das lässt sich nicht rückgängig machen.', delDupImage: 'Diese Image-Datei wird vom Laufwerk gelöscht: {path}. Die Bibliothekskopie und ihr Cache bleiben. Das lässt sich nicht rückgängig machen.',
     stopTitle: 'Kraken Mount beenden?',
     stopText: 'Die Spiele bleiben registriert. Öffnen Sie die Kachel Kraken Mount, um es erneut zu starten.',
     stopYes: 'Beenden',
@@ -2064,7 +2054,7 @@ var MSG = {
     gNotify: 'Benachrichtigungen & Protokoll', gMaint: 'Wartung', expandMenu: 'Menü ausklappen', collapseMenu: 'Menü einklappen',
     hideTitle: '{name} ausblenden?', hideText: 'Es verschwindet vom Startbildschirm und aus der Bibliothek. Seine Dateien bleiben unter {path}; einblenden können Sie es im Bereich Ausgeblendet.',
     backportsTab: 'Backports', bpDeleteAll: 'Alle löschen', bpNone: 'Keine Backports gefunden.',
-    imagesTab: 'Images', imHint: 'Image-Dateien ({ext}) in den Scan-Ordnern. Jede wird vor dem Einhängen gelesen; eine mit einem Spiel wird schreibgeschützt eingehängt, und das Spiel erscheint in der Bibliothek.', imNone: 'Keine Image-Dateien in den Scan-Ordnern gefunden.', imMounted: 'Eingehängt', imCopying: 'Wird kopiert', imDetails: 'Details',
+    kindImages: 'Images',
     bpHint: 'Ordner in {dir} eines Scan-Stammverzeichnisses ersetzen beim Start die Dateien des Spiels.',
     bpOff: 'Backports sind in den Einstellungen aus: keiner davon wird angewendet.',
     bpApplied: 'Angewendet', bpPending: 'Wird beim nächsten Erstellen angewendet', bpOffState: 'Aus',
@@ -2173,6 +2163,7 @@ var MSG = {
     deleteTitle: '¿Eliminar {name}?',
     deletePkg: 'El archivo .pkg y su caché se eliminarán de la unidad: {path}. No se puede deshacer.',
     deleteFolder: 'La carpeta del juego y su caché se eliminarán de la unidad: {path}. No se puede deshacer.',
+    deleteImage: 'El archivo de imagen y su caché se eliminarán de la unidad: {path}. No se puede deshacer.', delDupImage: 'Este archivo de imagen se eliminará de la unidad: {path}. La copia de la biblioteca y su caché se conservan. No se puede deshacer.',
     stopTitle: '¿Detener Kraken Mount?',
     stopText: 'Los juegos siguen registrados. Abre el icono de Kraken Mount para iniciarlo de nuevo.',
     stopYes: 'Detener',
@@ -2226,7 +2217,7 @@ var MSG = {
     gNotify: 'Notificaciones y registro', gMaint: 'Mantenimiento', expandMenu: 'Expandir menú', collapseMenu: 'Contraer menú',
     hideTitle: '¿Ocultar {name}?', hideText: 'Sale de la pantalla de inicio y de la biblioteca. Sus archivos siguen en {path}; puedes mostrarlo de nuevo en la pantalla Ocultos.',
     backportsTab: 'Backports', bpDeleteAll: 'Eliminar todos', bpNone: 'No se encontraron backports.',
-    imagesTab: 'Imágenes', imHint: 'Archivos de imagen ({ext}) en las carpetas de escaneo. Cada uno se lee antes de montarlo; el que contiene un juego se monta en solo lectura y el juego aparece en la biblioteca.', imNone: 'No se encontraron archivos de imagen en las carpetas de escaneo.', imMounted: 'Montada', imCopying: 'Copiándose', imDetails: 'Detalles',
+    kindImages: 'Imágenes',
     bpHint: 'Las carpetas de {dir} en una raíz de escaneo reemplazan los archivos del juego al iniciarlo.',
     bpOff: 'Los backports están desactivados en Ajustes: no se aplica ninguno.',
     bpApplied: 'Aplicado', bpPending: 'Se aplica en la próxima creación', bpOffState: 'Desactivado',
@@ -2335,6 +2326,7 @@ var MSG = {
     deleteTitle: 'Supprimer {name} ?',
     deletePkg: 'Le fichier .pkg et son cache seront supprimés du disque : {path}. Action irréversible.',
     deleteFolder: 'Le dossier du jeu et son cache seront supprimés du disque : {path}. Action irréversible.',
+    deleteImage: 'Le fichier image et son cache seront supprimés du disque : {path}. Action irréversible.', delDupImage: 'Ce fichier image sera supprimé du disque : {path}. La copie de la bibliothèque et son cache restent. Action irréversible.',
     stopTitle: 'Arrêter Kraken Mount ?',
     stopText: 'Les jeux restent enregistrés. Ouvrez la vignette Kraken Mount pour le relancer.',
     stopYes: 'Arrêter',
@@ -2388,7 +2380,7 @@ var MSG = {
     gNotify: 'Notifications et journal', gMaint: 'Maintenance', expandMenu: 'Déplier le menu', collapseMenu: 'Replier le menu',
     hideTitle: 'Masquer {name} ?', hideText: 'Il quitte l\'écran d\'accueil et la bibliothèque. Ses fichiers restent dans {path} ; réaffichez-le depuis l\'écran Masqués.',
     backportsTab: 'Backports', bpDeleteAll: 'Tout supprimer', bpNone: 'Aucun backport trouvé.',
-    imagesTab: 'Images', imHint: 'Fichiers image ({ext}) des dossiers analysés. Chacun est lu avant d\'être monté ; celui qui contient un jeu est monté en lecture seule et le jeu apparaît dans la bibliothèque.', imNone: 'Aucun fichier image trouvé dans les dossiers analysés.', imMounted: 'Montée', imCopying: 'Copie en cours', imDetails: 'Détails',
+    kindImages: 'Images',
     bpHint: 'Les dossiers de {dir} d\'une racine d\'analyse remplacent les fichiers du jeu au lancement.',
     bpOff: 'Les backports sont désactivés dans les Paramètres : aucun n\'est appliqué.',
     bpApplied: 'Appliqué', bpPending: 'Appliqué à la prochaine création', bpOffState: 'Désactivé',
@@ -2497,6 +2489,7 @@ var MSG = {
     deleteTitle: '{name} を削除しますか？',
     deletePkg: '.pkg ファイルとそのキャッシュをドライブから削除します: {path}。元に戻せません。',
     deleteFolder: 'ゲームフォルダーとそのキャッシュをドライブから削除します: {path}。元に戻せません。',
+    deleteImage: 'イメージファイルとそのキャッシュをドライブから削除します: {path}。元に戻せません。', delDupImage: 'このイメージファイルをドライブから削除します: {path}。ライブラリのコピーとそのキャッシュは残ります。元に戻せません。',
     stopTitle: 'Kraken Mount を停止しますか？',
     stopText: 'ゲームは登録されたままです。再び起動するには Kraken Mount タイルを開いてください。',
     stopYes: '停止',
@@ -2550,7 +2543,7 @@ var MSG = {
     gNotify: '通知とログ', gMaint: 'メンテナンス', expandMenu: 'メニューを展開', collapseMenu: 'メニューを折りたたむ',
     hideTitle: '{name} を非表示にしますか？', hideText: 'ホーム画面とライブラリから外れます。ファイルは {path} に残ります。「非表示」画面から再表示できます。',
     backportsTab: 'バックポート', bpDeleteAll: 'すべて削除', bpNone: 'バックポートが見つかりません。',
-    imagesTab: 'イメージ', imHint: 'スキャンフォルダー内のイメージファイル（{ext}）。マウントする前にそれぞれを読み取り、ゲームを含むものは読み取り専用でマウントされ、ゲームがライブラリに表示されます。', imNone: 'スキャンフォルダーにイメージファイルが見つかりません。', imMounted: 'マウント済み', imCopying: 'コピー中', imDetails: '詳細',
+    kindImages: 'イメージ',
     bpHint: 'スキャンルートの {dir} にあるフォルダーが、起動時にゲームのファイルを置き換えます。',
     bpOff: '設定でバックポートがオフになっています: どれも適用されません。',
     bpApplied: '適用済み', bpPending: '次回の作成時に適用', bpOffState: 'オフ',
@@ -2659,6 +2652,7 @@ var MSG = {
     deleteTitle: 'Excluir {name}?',
     deletePkg: 'O arquivo .pkg e o cache dele serão excluídos do drive: {path}. Não é possível desfazer.',
     deleteFolder: 'A pasta do jogo e o cache dela serão excluídos do drive: {path}. Não é possível desfazer.',
+    deleteImage: 'O arquivo de imagem e o cache dele serão excluídos do drive: {path}. Não é possível desfazer.', delDupImage: 'Este arquivo de imagem será excluído do drive: {path}. A cópia da biblioteca e o cache dela permanecem. Não é possível desfazer.',
     stopTitle: 'Parar o Kraken Mount?',
     stopText: 'Os jogos continuam registrados. Abra o bloco do Kraken Mount para iniciá-lo de novo.',
     stopYes: 'Parar',
@@ -2712,7 +2706,7 @@ var MSG = {
     gNotify: 'Notificações e log', gMaint: 'Manutenção', expandMenu: 'Expandir menu', collapseMenu: 'Recolher menu',
     hideTitle: 'Ocultar {name}?', hideText: 'Ele sai da tela inicial e da biblioteca. Os arquivos continuam em {path}; reexiba-o na tela Ocultos.',
     backportsTab: 'Backports', bpDeleteAll: 'Excluir todos', bpNone: 'Nenhum backport encontrado.',
-    imagesTab: 'Imagens', imHint: 'Arquivos de imagem ({ext}) nas pastas de varredura. Cada um é lido antes de ser montado; o que contém um jogo é montado somente leitura e o jogo aparece na biblioteca.', imNone: 'Nenhum arquivo de imagem encontrado nas pastas de varredura.', imMounted: 'Montada', imCopying: 'Sendo copiada', imDetails: 'Detalhes',
+    kindImages: 'Imagens',
     bpHint: 'Pastas em {dir} de uma raiz de escaneamento substituem os arquivos do jogo ao iniciar.',
     bpOff: 'Os backports estão desativados nas Configurações: nenhum deles é aplicado.',
     bpApplied: 'Aplicado', bpPending: 'Aplicado na próxima criação', bpOffState: 'Desativado',
@@ -2821,6 +2815,7 @@ var MSG = {
     deleteTitle: 'Eliminare {name}?',
     deletePkg: "Il file .pkg e la sua cache verranno eliminati dall'unità: {path}. L'operazione non è reversibile.",
     deleteFolder: "La cartella del gioco e la sua cache verranno eliminate dall'unità: {path}. L'operazione non è reversibile.",
+    deleteImage: "Il file immagine e la sua cache verranno eliminati dall'unità: {path}. L'operazione non è reversibile.", delDupImage: "Questo file immagine verrà eliminato dall'unità: {path}. La copia nella libreria e la sua cache restano. L'operazione non è reversibile.",
     stopTitle: 'Arrestare Kraken Mount?',
     stopText: 'I giochi restano registrati. Apri il riquadro Kraken Mount per avviarlo di nuovo.',
     stopYes: 'Arresta',
@@ -2874,7 +2869,7 @@ var MSG = {
     gNotify: 'Notifiche e registro', gMaint: 'Manutenzione', expandMenu: 'Espandi menu', collapseMenu: 'Comprimi menu',
     hideTitle: 'Nascondere {name}?', hideText: 'Esce dalla schermata Home e dalla libreria. I suoi file restano in {path}; puoi mostrarlo di nuovo dalla schermata Nascosti.',
     backportsTab: 'Backport', bpDeleteAll: 'Elimina tutti', bpNone: 'Nessun backport trovato.',
-    imagesTab: 'Immagini', imHint: 'File immagine ({ext}) nelle cartelle di scansione. Ognuno viene letto prima di essere montato; quello che contiene un gioco viene montato in sola lettura e il gioco compare nella libreria.', imNone: 'Nessun file immagine trovato nelle cartelle di scansione.', imMounted: 'Montata', imCopying: 'In copia', imDetails: 'Dettagli',
+    kindImages: 'Immagini',
     bpHint: 'Le cartelle in {dir} di una radice di scansione sostituiscono i file del gioco all\'avvio.',
     bpOff: 'I backport sono disattivati nelle Impostazioni: nessuno viene applicato.',
     bpApplied: 'Applicato', bpPending: 'Si applica alla prossima creazione', bpOffState: 'Disattivato',
@@ -2983,6 +2978,7 @@ var MSG = {
     deleteTitle: '{name}을(를) 삭제할까요?',
     deletePkg: '.pkg 파일과 캐시가 드라이브에서 삭제됩니다: {path}. 되돌릴 수 없습니다.',
     deleteFolder: '게임 폴더와 캐시가 드라이브에서 삭제됩니다: {path}. 되돌릴 수 없습니다.',
+    deleteImage: '이미지 파일과 캐시가 드라이브에서 삭제됩니다: {path}. 되돌릴 수 없습니다.', delDupImage: '이 이미지 파일이 드라이브에서 삭제됩니다: {path}. 라이브러리 사본과 캐시는 유지됩니다. 되돌릴 수 없습니다.',
     stopTitle: 'Kraken Mount를 중지할까요?',
     stopText: '게임은 등록된 상태로 유지됩니다. 다시 시작하려면 Kraken Mount 타일을 여세요.',
     stopYes: '중지',
@@ -3036,7 +3032,7 @@ var MSG = {
     gNotify: '알림 및 로그', gMaint: '유지 관리', expandMenu: '메뉴 펼치기', collapseMenu: '메뉴 접기',
     hideTitle: '{name}을(를) 숨길까요?', hideText: '홈 화면과 라이브러리에서 빠집니다. 파일은 {path}에 남아 있으며, 숨김 화면에서 숨김 해제할 수 있습니다.',
     backportsTab: '백포트', bpDeleteAll: '모두 삭제', bpNone: '백포트를 찾을 수 없습니다.',
-    imagesTab: '이미지', imHint: '스캔 폴더의 이미지 파일({ext})입니다. 각 파일은 마운트하기 전에 먼저 읽히며, 게임이 들어 있는 파일은 읽기 전용으로 마운트되어 게임이 라이브러리에 나타납니다.', imNone: '스캔 폴더에 이미지 파일이 없습니다.', imMounted: '마운트됨', imCopying: '복사 중', imDetails: '자세히',
+    kindImages: '이미지',
     bpHint: '스캔 루트의 {dir} 폴더가 실행 시 게임 파일을 대체합니다.',
     bpOff: '설정에서 백포트가 꺼져 있어 아무것도 적용되지 않습니다.',
     bpApplied: '적용됨', bpPending: '다음 생성 시 적용', bpOffState: '꺼짐',
@@ -3145,6 +3141,7 @@ var MSG = {
     deleteTitle: 'حذف {name}؟',
     deletePkg: 'سيُحذف ملف .pkg وذاكرته المؤقتة من المحرك: {path}. لا يمكن التراجع عن ذلك.',
     deleteFolder: 'سيُحذف مجلد اللعبة وذاكرته المؤقتة من المحرك: {path}. لا يمكن التراجع عن ذلك.',
+    deleteImage: 'سيُحذف ملف الصورة وذاكرته المؤقتة من المحرك: {path}. لا يمكن التراجع عن ذلك.', delDupImage: 'سيُحذف ملف الصورة هذا من المحرك: {path}. تبقى نسخة المكتبة وذاكرتها المؤقتة. لا يمكن التراجع عن ذلك.',
     stopTitle: 'إيقاف Kraken Mount؟',
     stopText: 'تبقى الألعاب مسجّلة. افتح لوحة Kraken Mount لتشغيله مرة أخرى.',
     stopYes: 'إيقاف',
@@ -3198,7 +3195,7 @@ var MSG = {
     gNotify: 'الإشعارات والسجل', gMaint: 'الصيانة', expandMenu: 'توسيع القائمة', collapseMenu: 'طي القائمة',
     hideTitle: 'إخفاء {name}؟', hideText: 'ستختفي من الشاشة الرئيسية والمكتبة. تبقى ملفاتها في {path}؛ أظهرها من قسم المخفية.',
     backportsTab: 'الباكبورت', bpDeleteAll: 'حذف الكل', bpNone: 'لم يُعثر على باكبورت.',
-    imagesTab: 'الصور', imHint: 'ملفات الصور ({ext}) في مجلدات الفحص. يُقرأ كل ملف قبل تركيبه؛ والملف الذي يحتوي على لعبة يُركَّب للقراءة فقط وتظهر اللعبة في المكتبة.', imNone: 'لم يُعثر على ملفات صور في مجلدات الفحص.', imMounted: 'مُركَّبة', imCopying: 'جارٍ النسخ', imDetails: 'التفاصيل',
+    kindImages: 'الصور',
     bpHint: 'تستبدل المجلدات في {dir} ضمن جذر المسح ملفات اللعبة عند التشغيل.',
     bpOff: 'الباكبورت متوقف في الإعدادات: لا يُطبَّق أي منها.',
     bpApplied: 'مُطبَّق', bpPending: 'يُطبَّق في الإنشاء التالي', bpOffState: 'متوقف',
@@ -3363,7 +3360,8 @@ var stopped = false, launchTried = false;
 var KINDS = [
   { id: 'all', key: 'kindAll' }, { id: 'pkg', label: 'FPKG' }, { id: 'installed', key: 'kindInstalled' },
   { id: 'zstd', label: 'ZSTD' },
-  { id: 'lz4', label: 'LZ4' }, { id: 'folder', key: 'kindFolders' }, { id: 'duplicate', key: 'dupTab' }
+  { id: 'lz4', label: 'LZ4' }, { id: 'folder', key: 'kindFolders' }, { id: 'image', key: 'kindImages' },
+  { id: 'duplicate', key: 'dupTab' }
 ];
 // The grid's filter: Duplicates lists only the copies a library title beat; the others list them too.
 function inFilter(g) {
@@ -3436,6 +3434,7 @@ function findGame(id) {
   return null;
 }
 function gameKind(g) {
+  if (g.image) return 'image';
   if (g.kind === 'pkg') return 'pkg';
   if (g.kind === 'installed') return 'installed';
   if (g.packing === 'lz4' || g.packing === 'zstd') return g.packing;
@@ -3522,15 +3521,15 @@ function updateCover(c, g) {
 }
 
 function renderChips(games) {
-  var counts = { all: 0, pkg: 0, installed: 0, folder: 0, lz4: 0, zstd: 0, duplicate: 0 };
+  var counts = { all: 0, pkg: 0, installed: 0, folder: 0, lz4: 0, zstd: 0, image: 0, duplicate: 0 };
   games.forEach(function (g) {
     if (!g || !g.title_id) return;
     counts.all++;
     counts[gameKind(g)]++;
     if (g.status === 'duplicate') counts.duplicate++;
   });
-  // The last duplicate gone while its chip is chosen: back to All.
-  if (filter === 'duplicate' && !counts.duplicate) filter = 'all';
+  // A chip shows only while it has games (All always): the last one gone while it is chosen, back to All.
+  if (filter !== 'all' && !counts[filter]) filter = 'all';
   var box = $('chips');
   KINDS.forEach(function (kind, i) {
     var b = box.children[i];
@@ -3544,7 +3543,7 @@ function renderChips(games) {
       box.appendChild(b);
     }
     b.setAttribute('aria-pressed', String(kind.id === filter));
-    b.hidden = kind.id === 'duplicate' && !counts.duplicate;
+    b.hidden = kind.id !== 'all' && !counts[kind.id];
     setText(b.firstChild, kindLabel(kind) + ' ');
     setText(b.lastChild, counts[kind.id]);
   });
@@ -3695,46 +3694,6 @@ function renderBackports(games) {
   $('bpall').hidden = list.length < 2;
   $('bpoff').classList.toggle('show', off && !!list.length);
 }
-// Images screen: each image file of the last scan (state.images), its game, state and Details.
-function renderImages(images, games) {
-  var list = Array.isArray(images) ? images : [], box = $('imlist');
-  var key = list.map(function (m) { return m.path + '|' + m.state + '|' + (m.title_id || ''); }).join(';');
-  if (box.getAttribute('data-key') !== key) {
-    var hadFocus = $('images').contains(document.activeElement);
-    box.setAttribute('data-key', key);
-    box.textContent = '';
-    list.forEach(function (m) {
-      var row = el('div', 'bprow'), name = el('div', 'bpname'), btn = el('button', 'small');
-      name.appendChild(el('b'));
-      name.appendChild(el('span'));
-      btn.type = 'button';
-      btn.onclick = function () { if (m.title_id && findGame(m.title_id)) openModal(m.title_id, btn); };
-      row.appendChild(name); row.appendChild(el('span', 'hdkind')); row.appendChild(el('code'));
-      row.appendChild(el('span', 'bpstate')); row.appendChild(btn); row.appendChild(el('div', 'imerr'));
-      box.appendChild(row);
-    });
-    if (hadFocus) { var first = driveButtons('images')[0]; if (first) first.focus(); else focusRail(); }
-  }
-  list.forEach(function (m, i) {
-    var r = box.children[i].children, file = String(m.path).split('/').pop();
-    var g = m.title_id ? (games || []).filter(function (x) {
-      return x && x.title_id === m.title_id && x.image === m.path;
-    })[0] : null;
-    var dup = !!g && g.status === 'duplicate';
-    setText(r[0].children[0], g ? gameName(g) : file);
-    setText(r[0].children[1], (g ? gameSub(g) + ' · ' : m.title_id ? m.title_id + ' · ' : '') + fmtSize(m.size));
-    setText(r[1], imageFormat(m.path));
-    setText(r[2], m.path);
-    r[3].className = 'bpstate' + (m.state === 'game' && !dup ? ' on' : m.state === 'error' ? ' err' : '');
-    setText(r[3], t(m.state === 'error' ? 'stError' : m.state === 'copying' ? 'imCopying' : dup ? 'stDuplicate' : 'imMounted'));
-    r[4].hidden = !g || dup;
-    setText(r[4], t('imDetails'));
-    r[4].setAttribute('aria-label', t('imDetails') + ' ' + (g ? gameName(g) : file));
-    r[5].hidden = !m.error;
-    setText(r[5], m.error || '');
-  });
-  $('imempty').hidden = !!list.length;
-}
 // Hidden screen: games hidden from the home screen (their path is in `exclude`), with Unhide.
 function renderHidden(list) {
   list = Array.isArray(list) ? list : [];
@@ -3820,7 +3779,7 @@ $('hdall').onclick = function () {
 $('m-hide').onclick = function () {
   var g = openTid && findGame(openTid);
   if (!g) return;
-  ask(t('hideTitle', { name: gameName(g) }), t(g.status === 'duplicate' ? 'hideDupText' : 'hideText', { path: g.path }), t('hide'), async function () {
+  ask(t('hideTitle', { name: gameName(g) }), t(g.status === 'duplicate' ? 'hideDupText' : 'hideText', { path: g.image || g.path }), t('hide'), async function () {
     try {
       var r = await fetch('/api/hide/' + encodeURIComponent(g.title_id), { method: 'POST', body: g.path });
       if (!r.ok) throw new Error((await r.text()) || 'HTTP ' + r.status);
@@ -4147,6 +4106,7 @@ function updateCard(c, g) {
   c.name.title = name;
   setText(c.sub, gameSub(g));
   setBadges(c.cover, g);
+  c.el.classList.toggle('img', !!g.image);
   c.el.setAttribute('aria-label', t(isRunning(g) ? 'cardAriaRunning' : 'cardAria', { name: name, type: badgeText(g), status: label }));
   var pill = installPill(g);
   c.status.hidden = status === 'ready' && !pill;
@@ -4245,7 +4205,7 @@ function renderModal() {
   var rows = [[t(installed ? 'fInstalledOn' : 'fDrive'), driveLabel(g.drive)], [t('fBackport'), backport]];
   if (!dup) rows.push([t('fCacheSize'), fmtSize(g.cache_size)], [t('fCacheBuilt'), fmtTime(g.cache_built)]);
   // Path | cache path as the third pair (cache path under cache built).
-  rows.push([t('fPath'), g.path || '—', 'mono']);
+  rows.push([t('fPath'), g.image || g.path || '—', 'mono']);
   if (!dup) rows.push([t('fCachePath'), (state.cache && state.cache.path ? state.cache.path : '/data/krakenmount/caches') + '/' + g.title_id, 'mono']);
   // The last crash of this title (crashes.json, the console's crash folder).
   // A Kraken source of an installed title is listed under it: the installed copy wins.
@@ -4485,7 +4445,8 @@ $('m-delete').onclick = function () {
   if (!g) return;
   var tid = g.title_id;
   var dup = g.status === 'duplicate';
-  ask(t('deleteTitle', { name: gameName(g) }), t(g.kind === 'pkg' ? (dup ? 'delDupPkg' : 'deletePkg') : (dup ? 'delDupFolder' : 'deleteFolder'), { path: g.path }),
+  ask(t('deleteTitle', { name: gameName(g) }), t(g.image ? (dup ? 'delDupImage' : 'deleteImage') : g.kind === 'pkg' ? (dup ? 'delDupPkg' : 'deletePkg')
+    : (dup ? 'delDupFolder' : 'deleteFolder'), { path: g.image || g.path }),
     t('delete'), async function () {
       try {
         var r = await fetch('/api/delete/' + encodeURIComponent(tid), { method: 'POST', body: g.path });
@@ -4592,7 +4553,6 @@ async function poll() {
     renderChips(games);
     renderStorage(state.drives);
     renderBackports(games);
-    renderImages(state.images, games);
     renderHidden(hiddenList);
     renderGrid(games);
     if (modalOpen()) renderModal();
@@ -5003,7 +4963,6 @@ function enterContent() {
 function enterView() {
   if (!$('drives').hidden) { if (driveButtons()[0]) driveButtons()[0].focus(); }
   else if (!$('backports').hidden) { if (driveButtons('backports')[0]) driveButtons('backports')[0].focus(); }
-  else if (!$('images').hidden) { if (driveButtons('images')[0]) driveButtons('images')[0].focus(); }
   else if (!$('hiddengames').hidden) { if (driveButtons('hiddengames')[0]) driveButtons('hiddengames')[0].focus(); }
   else if (!$('install').hidden) { if (driveButtons('install')[0]) driveButtons('install')[0].focus(); }
   else if ($('library').hidden) fields()[0].focus(); else focusChip();
@@ -5110,7 +5069,6 @@ document.addEventListener('keydown', function (e) {
   if ($('settings').contains(t)) { if (moveInSettings(t, k)) e.preventDefault(); return; }
   if ($('drives').contains(t)) { e.preventDefault(); moveInDrives(t, k); return; }
   if ($('backports').contains(t)) { e.preventDefault(); moveInDrives(t, k, 'backports'); return; }
-  if ($('images').contains(t)) { e.preventDefault(); moveInDrives(t, k, 'images'); return; }
   if ($('hiddengames').contains(t)) { e.preventDefault(); moveInDrives(t, k, 'hiddengames'); return; }
   if ($('install').contains(t)) { e.preventDefault(); moveInDrives(t, k, 'install'); return; }
   if (t === $('q')) {
@@ -5148,7 +5106,6 @@ function renderAll() {
     renderChips(games);
     renderStorage(state.drives);
     renderBackports(games);
-    renderImages(state.images, games);
     renderHidden(hiddenList);
     renderInstall();
     renderGrid(games);

@@ -28,24 +28,11 @@ pub struct Game {
     pub cache_built: Option<u64>,
 }
 
-/// One `.exfat`/`.ffpkg`/`.ffpfs`/`.ffpfsc` file of the last scan.
-#[derive(Clone)]
-pub struct ImageRow {
-    pub path: PathBuf,
-    pub size: u64,
-    /// "game" (mounted, a library source or a duplicate), "copying" (stability wait) or "error".
-    pub state: &'static str,
-    pub title_id: Option<String>,
-    pub error: Option<String>,
-}
-
 pub struct State {
     /// The last scan: library games first, then duplicates.
     pub games: Mutex<Vec<Game>>,
     /// The last scan's patch and DLC packages (the Install screen).
     pub packages: Mutex<Vec<Package>>,
-    /// The last scan's image files (the Images screen): `main::publish`.
-    pub images: Mutex<Vec<ImageRow>>,
     pub settings: Mutex<Settings>,
     /// Title ids to rebuild on the next scan.
     pub forced: Mutex<HashSet<String>>,
@@ -71,7 +58,6 @@ impl State {
         State {
             games: Mutex::new(Vec::new()),
             packages: Mutex::new(Vec::new()),
-            images: Mutex::new(Vec::new()),
             settings: Mutex::new(settings),
             forced: Mutex::new(HashSet::new()),
             purge: AtomicBool::new(false),
@@ -173,10 +159,10 @@ fn hidden_json(exclude: &[String]) -> Vec<serde_json::Value> {
         Some(s) => {
             let (kind, packing) = kind_json(s.kind);
             serde_json::json!({"path": p, "title_id": s.title_id, "title_name": s.title_name, "version": s.version,
-                "kind": kind, "packing": packing, "drive": s.drive, "size": s.size})
+                "kind": kind, "packing": packing, "image": s.image, "drive": s.drive, "size": s.size})
         }
         None => serde_json::json!({"path": p, "title_id": null, "title_name": null, "version": null,
-            "kind": null, "packing": null, "drive": null, "size": null}),
+            "kind": null, "packing": null, "image": null, "drive": null, "size": null}),
     }).collect()
 }
 
@@ -1010,13 +996,6 @@ fn api_state(state: &State) -> Vec<u8> {
         "waiting": *state.waiting.lock().unwrap(),
         "running": running,
         "games": games,
-        "images": state.images.lock().unwrap().iter().map(|i| serde_json::json!({
-            "path": i.path.to_string_lossy(),
-            "size": i.size,
-            "state": i.state,
-            "title_id": i.title_id,
-            "error": i.error,
-        })).collect::<Vec<_>>(),
         "install": install,
         "drives": drives,
         "cache": {
@@ -1325,7 +1304,7 @@ fn sizes(state: &State, tid: &str) -> Reply {
 }
 
 pub(crate) fn safe_delete_source(src: &Source, roots: &[String]) -> Result<(), &'static str> {
-    let path = &src.path;
+    let path = src.origin();
     if !path.is_absolute() || path.components().any(|c| c == Component::ParentDir) {
         return Err("source path is not a safe absolute path");
     }
@@ -1358,6 +1337,7 @@ pub(crate) fn safe_delete_source(src: &Source, roots: &[String]) -> Result<(), &
     }
     let meta = fs::symlink_metadata(path).map_err(|_| "source path is missing or inaccessible")?;
     match src.kind {
+        Kind::Folder(_) if src.image.is_some() => if meta.is_file() { Ok(()) } else { Err("source image is not a file") },
         Kind::Pkg if meta.is_file() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pkg")) => Ok(()),
         Kind::Folder(_) if meta.is_dir() => Ok(()),
         Kind::Pkg => Err("source is not a .pkg file"),
@@ -1507,20 +1487,29 @@ fn delete_duplicate(state: &State, tid: &str, dup: &Source) -> Reply {
         return reply(409, "text/plain", reason);
     }
     let result = match dup.kind {
+        Kind::Folder(_) if dup.image.is_some() => remove_image(dup),
         Kind::Pkg => fs::remove_file(&dup.path),
         Kind::Folder(_) => fs::remove_dir_all(&dup.path),
         Kind::Installed => return reply(409, "text/plain", "an installed game is not deleted here"),
     };
     if let Err(e) = result {
         // ponytail: a folder remove_dir_all that failed midway leaves a partial duplicate.
-        log!("{tid}: delete duplicate {}: {e}", dup.path.display());
+        log!("{tid}: delete duplicate {}: {e}", dup.origin().display());
         state.wake();
         return reply(500, "text/plain", e.to_string());
     }
-    log!("{tid}: deleted the duplicate {}", dup.path.display());
+    log!("{tid}: deleted the duplicate {}", dup.origin().display());
     state.games.lock().unwrap().retain(|g| g.src.path != dup.path);
     state.wake();
     no_content()
+}
+
+/// Deletes an image game's image file once its mounts are released (an inner image, a title on it;
+/// never forced: busy is an error and the file stays).
+fn remove_image(src: &Source) -> std::io::Result<()> {
+    let image = src.origin();
+    crate::image::release_tree(&crate::image::mount_point(image), &mount_table()?)?;
+    fs::remove_file(image)
 }
 
 fn delete(state: &State, tid: &str, body: &[u8]) -> Reply {
@@ -1553,22 +1542,23 @@ fn delete(state: &State, tid: &str, body: &[u8]) -> Reply {
         if settings.scan_paths.is_empty() { storage::default_scan_roots() } else { settings.scan_paths.clone() }
     };
     if let Err(reason) = safe_delete_source(&src, &roots) {
-        log!("{tid}: delete rejected {}: {reason}", src.path.display());
+        log!("{tid}: delete rejected {}: {reason}", src.origin().display());
         return reply(409, "text/plain", reason);
     }
     if let Err(e) = register::unmount_title(tid) {
-        log!("{tid}: unmount {}: {e}", src.path.display());
+        log!("{tid}: unmount {}: {e}", src.origin().display());
         return reply(409, "text/plain", e.to_string());
     }
     // Source first: if it cannot be removed, the cache (game-written files) and the tile stay.
     let result = match src.kind {
+        Kind::Folder(_) if src.image.is_some() => remove_image(&src),
         Kind::Pkg => fs::remove_file(&src.path),
         Kind::Folder(_) => fs::remove_dir_all(&src.path),
         // Refused by safe_delete_source above.
         Kind::Installed => return reply(409, "text/plain", "an installed game is not deleted here"),
     };
     if let Err(e) = result {
-        log!("{tid}: delete source {}: {e}", src.path.display());
+        log!("{tid}: delete source {}: {e}", src.origin().display());
         // Unmounted above: the next pass remounts it (process: register::mount on a registered title).
         // ponytail: a folder remove_dir_all that failed midway leaves a partial source; not restored.
         state.wake();
@@ -1576,7 +1566,7 @@ fn delete(state: &State, tid: &str, body: &[u8]) -> Reply {
     }
     if let Err(e) = register::uninstall(tid) {
         // ponytail: the tile may stay; the next scan does not re-register a deleted source.
-        log!("{tid}: uninstall {}: {e}", src.path.display());
+        log!("{tid}: uninstall {}: {e}", src.origin().display());
     }
     state.titles.lock().unwrap().remove(tid);
     state.games.lock().unwrap().retain(|g| g.src.path != src.path);
@@ -1588,7 +1578,7 @@ fn delete(state: &State, tid: &str, body: &[u8]) -> Reply {
             return reply(500, "text/plain", format!("source deleted; cache not: {e}"));
         }
     }
-    log!("{tid}: deleted {}", src.path.display());
+    log!("{tid}: deleted {}", src.origin().display());
     if state.settings.lock().unwrap().notify {
         sys::notify(&crate::i18n::deleted(crate::i18n::lang(), &src.title_name));
     }
@@ -1615,19 +1605,19 @@ fn manual(state: &State, b: &Obj, exclude: bool) -> Result<serde_json::Value, Fa
 /// `expect`: the source path the UI showed (/api/hide); empty = any.
 fn uninstall_keep(state: &State, tid: &str, expect: Option<&[u8]>) -> Result<serde_json::Value, Fail> {
     let (_work, src) = lock_title(state, tid)?;
-    let path = src.path.to_string_lossy().into_owned();
+    let path = src.origin().to_string_lossy().into_owned();
     // /api/hide of a duplicate: only its path joins `exclude`; the library copy stays registered.
     if let Some(dup) = expect.and_then(|b| duplicate(state, tid, b)).filter(|d| d.path != src.path) {
         // An installed copy ignores `exclude` (scan claims installs first): nothing to hide.
         if let Some(msg) = installed_refusal(&dup) {
             return Err(fail(409, libc::EPERM, msg));
         }
-        let Some(entry) = exclude_entry(&dup.path.to_string_lossy()) else {
+        let Some(entry) = exclude_entry(&dup.origin().to_string_lossy()) else {
             return Err(fail(409, libc::EINVAL, "the source path is not absolute"));
         };
         change_settings(state, &format!("{tid}: exclude {entry}"), |s| set_member(&mut s.exclude, &entry, true)).map_err(save_fail)?;
         state.games.lock().unwrap().retain(|g| g.src.path != dup.path);
-        log!("{tid}: hid the duplicate {}", dup.path.display());
+        log!("{tid}: hid the duplicate {}", dup.origin().display());
         return Ok(serde_json::json!({}));
     }
     if let Some(msg) = installed_refusal(&src) {
@@ -1664,7 +1654,7 @@ fn uninstall_keep(state: &State, tid: &str, expect: Option<&[u8]>) -> Result<ser
     // ponytail: only the listed copies; one still being copied (scan's `unstable`) is not known here.
     let mut entries = vec![entry];
     let others: Vec<PathBuf> = state.games.lock().unwrap().iter()
-        .filter(|g| g.src.title_id == tid && g.src.path != src.path).map(|g| g.src.path.clone()).collect();
+        .filter(|g| g.src.title_id == tid && g.src.path != src.path).map(|g| g.src.origin().to_path_buf()).collect();
     for p in &others {
         match exclude_entry(&p.to_string_lossy()) {
             Some(e) if !entries.contains(&e) => entries.push(e),
@@ -1736,7 +1726,12 @@ fn delete_hidden(state: &State, body: &[u8]) -> Reply {
     }
     // A source hidden by hand (manual/remove, config) stays registered: as /api/delete, its home-screen
     // entry goes too when this path is the registered source and the registration is ours.
-    let registered = cache::stamp_source(&tid).as_deref() == Some(path) && register::is_ours(&tid).is_ok();
+    // An image's registered source is the game folder in its mount (image::holds).
+    let registered = cache::stamp_source(&tid).is_some_and(|s| if src.image.is_some() {
+        crate::image::holds(Path::new(path), Path::new(&s))
+    } else {
+        s == path
+    }) && register::is_ours(&tid).is_ok();
     if registered {
         if let Err(e) = register::unmount_title(&tid) {
             log!("{tid}: delete hidden {path}: unmount: {e}");
@@ -1744,6 +1739,7 @@ fn delete_hidden(state: &State, body: &[u8]) -> Reply {
         }
     }
     let result = match src.kind {
+        Kind::Folder(_) if src.image.is_some() => remove_image(&src),
         Kind::Pkg => fs::remove_file(path),
         Kind::Folder(_) => fs::remove_dir_all(path),
         Kind::Installed => return reply(409, "text/plain", "an installed game is not deleted here"),
@@ -1752,6 +1748,7 @@ fn delete_hidden(state: &State, body: &[u8]) -> Reply {
         // ponytail: a folder remove_dir_all that failed midway leaves a partial source (still hidden).
         log!("{tid}: delete hidden {path}: {e}");
         // Still registered: mounted again (an excluded source is not remounted by the scan). shortcut: no backport layer.
+        // ponytail: an image's mounts are already released here, so its remount fails (logged); Unhide mounts it again.
         if registered {
             if let Err(m) = register::mount(&tid, &cache::app0(&src), None) {
                 log!("{tid}: delete hidden {path}: remount: {m}");
@@ -1969,7 +1966,7 @@ fn v1_game_info(state: &State, tid: &str) -> Result<serde_json::Value, Fail> {
 
 /// A title's entry in SMP's games shape.
 fn v1_game(g: &Game, [registered, mounted, present]: [bool; 3], overlay_off: &[String]) -> serde_json::Value {
-    let path = g.src.path.to_string_lossy();
+    let path = g.src.origin().to_string_lossy();
     let folder = matches!(g.src.kind, Kind::Folder(_));
     let installed = g.src.kind == Kind::Installed || crate::scan::installed_pkg(&g.src);
     serde_json::json!({
@@ -1977,7 +1974,8 @@ fn v1_game(g: &Game, [registered, mounted, present]: [bool; 3], overlay_off: &[S
         "name": g.src.title_name,
         "version": g.src.version,
         "path": path,
-        "runtime_path": if folder { &path[..] } else { "" },
+        // An image game: `path` is the image file (manual/remove excludes it), the folder its mount.
+        "runtime_path": if folder { g.src.path.to_string_lossy() } else { "".into() },
         "source_type": if folder { "folder" } else if installed { "installed" } else { "pkg" },
         // The console's own install: Kraken Mount neither registers nor uninstalls it.
         "managed": !installed,

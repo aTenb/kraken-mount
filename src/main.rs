@@ -409,21 +409,6 @@ fn finish(
 /// keeps its old entry (it is not gone), a new one shows up once it is stable.
 fn publish(state: &State, r: &scan::ScanResult) {
     *state.packages.lock().unwrap() = r.packages.clone();
-    // The Images screen: every image file of this pass, sorted by path.
-    let size = |p: &std::path::Path| std::fs::metadata(p).map_or(0, |m| m.len());
-    let mut images: Vec<web::ImageRow> = r.games.iter().chain(&r.duplicates)
-        .filter_map(|g| g.image.as_ref().map(|i| web::ImageRow {
-            path: i.clone(), size: g.size, state: "game", title_id: Some(g.title_id.clone()), error: None,
-        }))
-        .chain(r.unstable.iter().filter(|(p, _)| image::is_image(p)).map(|(p, tid)| web::ImageRow {
-            path: p.clone(), size: size(p), state: "copying", title_id: tid.clone(), error: None,
-        }))
-        .chain(r.errors.iter().filter(|(p, _)| image::is_image(p)).map(|(p, e)| web::ImageRow {
-            path: p.clone(), size: size(p), state: "error", title_id: None, error: Some(e.clone()),
-        }))
-        .collect();
-    images.sort_by(|a, b| a.path.cmp(&b.path));
-    *state.images.lock().unwrap() = images;
     let mut games = state.games.lock().unwrap();
     let old = std::mem::take(&mut *games);
     for src in &r.games {
@@ -1072,7 +1057,9 @@ fn main() {
             .chain(r.unstable.iter().map(|(p, _)| p.as_path()).filter(|p| image::is_image(p)).map(image::mount_point))
             .chain(r.errors.iter().filter_map(|(p, _)| image::mount_of(p)))
             .collect();
-        image::release_unused(&keep);
+        // A running homebrew (the loop goes on for it) may run from an image: release_unused leaves its mounts.
+        let running: Vec<String> = state.running.lock().unwrap().iter().cloned().collect();
+        image::release_unused(&keep, &running);
         // A source that left the scan (USB unplugged) goes through register::mount again when back.
         // A source still being copied stays registered (skipped this pass, not gone).
         registered.retain(|t| r.games.iter().any(|g| &g.title_id == t)
@@ -1091,7 +1078,7 @@ fn main() {
             }
             // Excluded since this pass loaded the settings (/api/v1/manual/remove, uninstall).
             // ponytail: a title staged before the change is still installed by install_staged below.
-            if scan::excluded(&src.path, &state.settings.lock().unwrap().exclude) {
+            if scan::excluded(src.origin(), &state.settings.lock().unwrap().exclude) {
                 continue;
             }
             process(&state, &s, src, &mut registered, &mut failed, &mut staged);
