@@ -1865,9 +1865,10 @@ fn v1(state: &State, route: &str, body: &[u8]) -> Reply {
             "api_version": 1,
             "kraken_mount_version": env!("CARGO_PKG_VERSION"),
             "capabilities": ["list_games", "add_manual_source", "remove_manual_source", "uninstall_game", "rescan", "fakelib",
-                "fakelib_unlisted", "reregister_missing"],
+                "fakelib_unlisted", "reregister_missing", "game_info"],
         })),
         "games" => Ok(v1_games(state)),
+        "games/info" => v1_game_info(state, str_field(&b, "title_id")?),
         "scan" => {
             state.wake();
             Ok(json!({}))
@@ -1897,29 +1898,42 @@ fn v1(state: &State, route: &str, body: &[u8]) -> Reply {
 fn v1_games(state: &State) -> serde_json::Value {
     let games: Vec<Game> = state.games.lock().unwrap().iter().filter(|g| g.status != "duplicate").cloned().collect();
     let overlay_off = state.settings.lock().unwrap().overlay_off.clone();
-    let list: Vec<_> = games.iter().zip(presence(&games)).map(|(g, [registered, mounted, present])| {
-        let path = g.src.path.to_string_lossy();
-        let folder = matches!(g.src.kind, Kind::Folder(_));
-        let installed = g.src.kind == Kind::Installed || crate::scan::installed_pkg(&g.src);
-        serde_json::json!({
-            "title_id": g.src.title_id,
-            "name": g.src.title_name,
-            "version": g.src.version,
-            "path": path,
-            "runtime_path": if folder { &path[..] } else { "" },
-            "source_type": if folder { "folder" } else if installed { "installed" } else { "pkg" },
-            // The console's own install: Kraken Mount neither registers nor uninstalls it.
-            "managed": !installed,
-            "installed": registered,
-            "mounted": mounted,
-            "source_available": present,
-            "status": g.status,
-            "error": g.error.as_deref().unwrap_or(""),
-            // As cache.rs: a pkg source keeps its fakelib whatever overlay_off says.
-            "fakelib_mode": if g.src.kind != Kind::Pkg && overlay_off.contains(&g.src.title_id) { "disabled" } else { "full" },
-        })
-    }).collect();
+    let list: Vec<_> = games.iter().zip(presence(&games)).map(|(g, flags)| v1_game(g, flags, &overlay_off)).collect();
     serde_json::json!({"count": list.len(), "games": list})
+}
+
+/// games/info: one library title's games entry, at the top level as SMP answers it (its `status` is
+/// then the API's 0); 404 ENOENT when the title is not in the library.
+fn v1_game_info(state: &State, tid: &str) -> Result<serde_json::Value, Fail> {
+    let game = state.games.lock().unwrap().iter().find(|g| g.src.title_id == tid && g.status != "duplicate").cloned();
+    let Some(g) = game else { return Err(fail(404, libc::ENOENT, "title not in the library")) };
+    let overlay_off = state.settings.lock().unwrap().overlay_off.clone();
+    let flags = presence(std::slice::from_ref(&g))[0];
+    Ok(v1_game(&g, flags, &overlay_off))
+}
+
+/// A title's entry in SMP's games shape.
+fn v1_game(g: &Game, [registered, mounted, present]: [bool; 3], overlay_off: &[String]) -> serde_json::Value {
+    let path = g.src.path.to_string_lossy();
+    let folder = matches!(g.src.kind, Kind::Folder(_));
+    let installed = g.src.kind == Kind::Installed || crate::scan::installed_pkg(&g.src);
+    serde_json::json!({
+        "title_id": g.src.title_id,
+        "name": g.src.title_name,
+        "version": g.src.version,
+        "path": path,
+        "runtime_path": if folder { &path[..] } else { "" },
+        "source_type": if folder { "folder" } else if installed { "installed" } else { "pkg" },
+        // The console's own install: Kraken Mount neither registers nor uninstalls it.
+        "managed": !installed,
+        "installed": registered,
+        "mounted": mounted,
+        "source_available": present,
+        "status": g.status,
+        "error": g.error.as_deref().unwrap_or(""),
+        // As cache.rs: a pkg source keeps its fakelib whatever overlay_off says.
+        "fakelib_mode": if g.src.kind != Kind::Pkg && overlay_off.contains(&g.src.title_id) { "disabled" } else { "full" },
+    })
 }
 
 // Lives in ps5/usb.c (IPMI to SceAutoMounterIpc, SMP sm_usb.c port).

@@ -851,13 +851,16 @@ answers, and two copies would scan at once. The install fails and its marker mea
   else `{status: <FreeBSD errno>, error}` with HTTP 400 (EINVAL), 404 (ENOENT; also an unknown route), 409
   (EBUSY, EPERM, EINVAL), 500 (a config save error's errno) or 501 (ENOTSUP). Routes (SMP meaning -> Kraken Mount):
   - `version` -> `{status, api_version: 1, kraken_mount_version, capabilities: ["list_games", "add_manual_source",
-    "remove_manual_source", "uninstall_game", "rescan", "fakelib", "fakelib_unlisted", "reregister_missing"]}`. A client
+    "remove_manual_source", "uninstall_game", "rescan", "fakelib", "fakelib_unlisted", "reregister_missing", "game_info"]}`. A client
     checks a capability, not the version: `fakelib_unlisted` = `games/fakelib` takes a title not in the library yet;
     `reregister_missing` = a title uninstalled outside Kraken Mount registers again at the next pass, with no restart.
   - `games` -> `{status, count, games: [{title_id, name, version, path, runtime_path (folder: path; pkg: ""),
     source_type: "folder"|"pkg"|"installed", managed: true (installed: false), installed (= registered), mounted, source_available (= source_present),
     status (the Kraken status), error ("" when none), fakelib_mode: "full"|"disabled" (overlay_off, folder and installed sources only)}]}`; library
     titles only (no `duplicate` rows); the three flags as in `/api/state`.
+  - `games/info {title_id}` -> that title's `games` entry at the top level, its `status` being the API's 0 (as SMP
+    answers it; SMP's size, patch and DLC fields are not sent); 404 ENOENT when the title is not in the library.
+    RecompStore's installer polls it for its own tile until `installed` is true.
   - `manual/remove {path}` -> adds `path` to `exclude` (Kraken Mount sees every folder in its scan roots, so
     removing a manual source means not seeing it); `manual/add {path}` -> takes it off `exclude`. `path` must be an
     absolute string without control characters (400 EINVAL), stored as config.rs does (trailing `/` trimmed). Idempotent:
