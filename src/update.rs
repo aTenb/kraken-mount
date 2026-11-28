@@ -13,7 +13,7 @@ const RELEASE_URL: &str = "https://api.github.com/repos/quer3q/kraken-mount/rele
 const ASSET: &str = "kraken-mount.elf";
 const MAX: usize = 32 << 20;
 const ELFLDR: ([u8; 4], u16) = ([127, 0, 0, 1], 9021);
-const RUNNING: &str = env!("CARGO_PKG_VERSION");
+const RUNNING: &str = crate::VERSION;
 
 /// The installable newer release found at start, None until (or unless) one is found.
 static LATEST: Mutex<Option<Release>> = Mutex::new(None);
